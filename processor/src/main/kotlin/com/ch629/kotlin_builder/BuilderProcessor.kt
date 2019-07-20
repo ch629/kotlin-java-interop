@@ -12,8 +12,6 @@ import javax.lang.model.element.TypeElement
 import javax.lang.model.element.VariableElement
 import javax.lang.model.type.TypeMirror
 
-var env: ProcessingEnvironment? = null
-
 @SupportedAnnotationTypes("com.ch629.kotlin_builder.Builder")
 @SupportedOptions(BuilderProcessor.KAPT_KOTLIN_GENERATED_OPTION_NAME)
 @SupportedSourceVersion(SourceVersion.RELEASE_8)
@@ -24,7 +22,6 @@ class BuilderProcessor : AbstractProcessor() {
 
     override fun process(annotations: Set<TypeElement>, roundEnv: RoundEnvironment): Boolean {
         val genSourceRoot = processingEnv.options[KAPT_KOTLIN_GENERATED_OPTION_NAME] ?: throw Error("NO LOCATION FOUND")
-        env = processingEnv
 
         val sourceRootFile = File(genSourceRoot)
         sourceRootFile.mkdir()
@@ -91,6 +88,7 @@ class BuilderProcessor : AbstractProcessor() {
 
         val params = fields.joinToString(", ") { "${it.simpleName} = _${it.simpleName}!!" }
 
+        // TODO: addStatement
         buildFunction.addCode(StringBuilder().apply {
             append("return $className(")
             append(params)
@@ -98,17 +96,18 @@ class BuilderProcessor : AbstractProcessor() {
         }.toString())
 
         clazz.addFunction(buildFunction.build())
+        val fileSpec = FileSpec.builder(packageName, "$builderName.kt").addType(clazz.build())
 
-        return FileSpec.builder(packageName, "$builderName.kt").addType(clazz.build()).build()
+        return fileSpec.build()
     }
 }
 
 private fun VariableElement.isNullable() = getAnnotation(Nullable::class.java) != null
 
-private val primitiveMap = mapOf<String, TypeName>(
+private val javaTypeMap = mapOf<String, TypeName>(
     java.lang.Integer::class.java.typeName to Int::class.asTypeName(),
     java.lang.Boolean::class.java.typeName to Boolean::class.asTypeName(),
     java.lang.String::class.java.typeName to String::class.asTypeName()
 )
 
-private fun TypeMirror.toKotlinType() = primitiveMap[asTypeName().toString()] ?: asTypeName()
+private fun TypeMirror.toKotlinType() = javaTypeMap[asTypeName().toString()] ?: asTypeName()
