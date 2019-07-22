@@ -9,16 +9,23 @@ import javax.lang.model.type.TypeMirror
 
 // Variables
 internal fun VariableElement.isNullable() = getAnnotation(Nullable::class.java) != null
+
 internal fun VariableElement.asKotlinType() = asType().asKotlinType()
-internal fun VariableElement.getDefaultValue() = getAnnotation(DefaultValue::class.java)?.value
+internal fun VariableElement.getDefaultValue(): String {
+    val value = getAnnotation(DefaultValue::class.java)?.value ?: return "null"
+    return if (this.asKotlinType() == String::class.asTypeName()) "\"$value\""
+    else value
+}
 
 // Classes
-internal fun TypeElement.hasCompanion() =  false
+internal fun TypeElement.getCompanion(): TypeElement? =
+    enclosedElements.firstOrNull { it.simpleName.toString() == "Companion" && it.kind == ElementKind.CLASS } as? TypeElement
 
 internal fun TypeElement.getConstructors() =
     enclosedElements.filter { it.kind == ElementKind.CONSTRUCTOR }.mapNotNull { it as? ExecutableElement }
 
-internal fun TypeElement.getFunctions() = enclosedElements.filter { it.kind == ElementKind.METHOD }.map { it as ExecutableElement }
+internal fun TypeElement.getFunctions() =
+    enclosedElements.filter { it.kind == ElementKind.METHOD }.map { it as ExecutableElement }
 
 internal fun Element.getName() = simpleName.toString()
 

@@ -52,7 +52,7 @@ spotless {
         target "**/*.gradle", "**/*.md", "**/.gitignore"
 
         trimTrailingWhitespace()
-        indentWithSpaces(4)
+        indentWithSpaces(2)
         endWithNewline()
         lineEndings = LineEnding.UNIX
     }
@@ -61,7 +61,7 @@ spotless {
         target "src/**/*.kt"
         ktlint()
         trimTrailingWhitespace()
-        indentWithSpaces(4)
+        indentWithSpaces(2)
         endWithNewline()
         lineEndings = LineEnding.UNIX
     }
@@ -70,7 +70,7 @@ spotless {
         googleJavaFormat()
         removeUnusedImports()
         trimTrailingWhitespace()
-        indentWithSpaces(4)
+        indentWithSpaces(2)
         endWithNewline()
         lineEndings = LineEnding.UNIX
     }

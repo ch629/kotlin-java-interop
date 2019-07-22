@@ -3,7 +3,6 @@ package com.ch629.kotlin_builder
 import com.ch629.kotlin_builder.annotations.Builder
 import com.squareup.kotlinpoet.*
 import java.io.File
-import java.lang.StringBuilder
 import javax.annotation.processing.*
 import javax.lang.model.SourceVersion
 import javax.lang.model.element.ElementKind
@@ -24,30 +23,31 @@ class BuilderProcessor : AbstractProcessor() {
         val sourceRootFile = File(genSourceRoot)
         sourceRootFile.mkdir()
 
-        val newFile = File(sourceRootFile, "Test.kt")
-        newFile.createNewFile()
-
         val annotatedElements = roundEnv.getElementsAnnotatedWith(Builder::class.java) ?: mutableSetOf()
         annotatedElements.forEach { el ->
             if (el.kind != ElementKind.CLASS) return false
             val clazz = el as TypeElement
-
+            val pkg = processingEnv.elementUtils.getPackageOf(clazz).toString()
             val constructor = clazz.getConstructors().firstOrNull() ?: throw Error("")
-            newFile.writeText(
-                createBuilder(
-                    el,
-                    "com.example",
-                    clazz.getName(),
-                    constructor.parameters
-                ).toString()
-            )
+
+            createBuilder(
+                el,
+                pkg,
+                clazz.getName(),
+                constructor.parameters
+            ).writeTo(sourceRootFile)
+
         }
 
         return false
     }
 
-    // TODO: Add extension function from original to access the builder easier? i.e. Test.builder().withName("").build()
-    fun createBuilder(classElement: TypeElement, packageName: String, className: String, fields: List<VariableElement>): FileSpec {
+    fun createBuilder(
+        classElement: TypeElement,
+        packageName: String,
+        className: String,
+        fields: List<VariableElement>
+    ): FileSpec {
         val builderName = "${className}Builder"
         val clazz = TypeSpec.classBuilder(builderName)
         fields.forEach { field ->
@@ -62,7 +62,8 @@ class BuilderProcessor : AbstractProcessor() {
                     KModifier.PRIVATE
                 )
                     .mutable()
-                    .initializer(if(defaultValue != null) "\"$defaultValue\"" else "null").build()
+                    .initializer(defaultValue)
+                    .build()
             )
 
             clazz.addFunction(
@@ -73,43 +74,31 @@ class BuilderProcessor : AbstractProcessor() {
                             field.asKotlinType().copy(field.isNullable())
                         ).build()
                     )
-                    .addCode(
-                        """ 
-                            |return apply {
-                            |   $builderFieldName = $originalName
-                            |}
-                            |
-                """.trimMargin()
-                    )
+                    .addStatement("return apply { $builderFieldName = $originalName }")
                     .build()
             )
         }
 
-        val buildFunction = FunSpec.builder("build").returns(classElement.asClassName())
-
         val params = fields.joinToString(", ") {
-            val error = "!!" // if(it.isNullable()) "" else " ?: throw Error(\"${it.getName()} is not nullable\")"
-            "${it.getName()} = _${it.getName()}$error"
+            "${it.getName()} = _${it.getName()}${if (it.isNullable()) "" else "!!"}"
         }
 
-        val map = fields.associate { it.getName() to "_${it.getName()}!!" }
+        clazz.addFunction(
+            FunSpec.builder("build")
+                .returns(classElement.asClassName())
+                .addStatement("return $className($params)")
+                .build()
+        )
+        val fileSpec = FileSpec.builder(packageName, builderName).addType(clazz.build())
 
-        // TODO: addStatement
-        buildFunction.addCode(StringBuilder().apply {
-            append("return $className(")
-            append(params)
-            appendln(")")
-        }.toString())
-
-        clazz.addFunction(buildFunction.build())
-        val fileSpec = FileSpec.builder(packageName, "$builderName.kt").addType(clazz.build())
-
-        // TODO: Figure out how to get Companion without it becoming `Companion.builder`() =
-        if(classElement.hasCompanion()) {
+        val companion = classElement.getCompanion()
+        if (companion != null) {
+            // JvmStatic can't be applied to extension functions.
             fileSpec.addFunction(
-                FunSpec.builder("Companion.builder").receiver(classElement.asClassName()).addStatement(
-                    "return $builderName()"
-                ).build()
+                FunSpec.builder("builder")
+                    .receiver(companion.asType().asKotlinType())
+                    .addStatement("return $builderName()")
+                    .build()
             )
         }
 
