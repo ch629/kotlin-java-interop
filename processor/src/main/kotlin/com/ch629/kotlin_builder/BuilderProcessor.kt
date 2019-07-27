@@ -7,7 +7,6 @@ import com.squareup.kotlinpoet.*
 import java.io.File
 import javax.annotation.processing.*
 import javax.lang.model.SourceVersion
-import javax.lang.model.element.ElementKind
 import javax.lang.model.element.TypeElement
 
 @SupportedAnnotationTypes("com.ch629.kotlin_builder.annotations.Builder")

@@ -19,6 +19,7 @@ object ElementVisitor {
   fun visit(element: TypeElement): KotlinClass {
     val constructors = mutableSetOf<KotlinFunction>()
     val functions = mutableSetOf<KotlinFunction>()
+    val className = element.asClassName()
 
     // Using this rather than mapping, as it'll be more efficient than filter & mapping twice (4n vs n here)
     element.enclosedElements.forEach {
@@ -32,8 +33,8 @@ object ElementVisitor {
       element.name,
       constructors,
       functions,
-      element.qualifiedName.toString().dropLastWhile { it != '.' },
-      element.asClassName(),
+      className.packageName,
+      className,
       element.getCompanion()
     )
   }
