@@ -27,7 +27,7 @@ internal fun TypeElement.getConstructors() =
 internal fun TypeElement.getFunctions() =
     enclosedElements.filter { it.kind == ElementKind.METHOD }.map { it as ExecutableElement }
 
-internal fun Element.getName() = simpleName.toString()
+internal val Element.name get() = simpleName.toString()
 
 private val javaTypeMap = mapOf<String, TypeName>(
     java.lang.Integer::class.java.typeName to Int::class.asTypeName(),

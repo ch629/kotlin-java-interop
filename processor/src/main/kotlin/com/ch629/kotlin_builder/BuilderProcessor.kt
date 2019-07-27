@@ -1,107 +1,92 @@
 package com.ch629.kotlin_builder
 
 import com.ch629.kotlin_builder.annotations.Builder
+import com.ch629.kotlin_builder.model.KotlinClass
+import com.ch629.kotlin_builder.model.processClass
 import com.squareup.kotlinpoet.*
 import java.io.File
 import javax.annotation.processing.*
 import javax.lang.model.SourceVersion
 import javax.lang.model.element.ElementKind
 import javax.lang.model.element.TypeElement
-import javax.lang.model.element.VariableElement
 
 @SupportedAnnotationTypes("com.ch629.kotlin_builder.annotations.Builder")
 @SupportedOptions(BuilderProcessor.KAPT_KOTLIN_GENERATED_OPTION_NAME)
 @SupportedSourceVersion(SourceVersion.RELEASE_8)
 class BuilderProcessor : AbstractProcessor() {
-    companion object {
-        const val KAPT_KOTLIN_GENERATED_OPTION_NAME = "kapt.kotlin.generated"
+  companion object {
+    const val KAPT_KOTLIN_GENERATED_OPTION_NAME = "kapt.kotlin.generated"
+  }
+
+  override fun getSupportedAnnotationTypes(): Set<String> {
+    return setOf(Builder::class.java.canonicalName)
+  }
+
+  override fun process(annotations: Set<TypeElement>, roundEnv: RoundEnvironment): Boolean {
+    val genSourceRoot = processingEnv.options[KAPT_KOTLIN_GENERATED_OPTION_NAME] ?: throw Error("NO LOCATION FOUND")
+
+    val sourceRootFile = File(genSourceRoot)
+    sourceRootFile.mkdir()
+
+    val annotatedElements = roundEnv.getElementsAnnotatedWith(Builder::class.java) ?: mutableSetOf()
+    annotatedElements.forEach { el ->
+      val kClass = processClass(el) ?: return@forEach
+
+      createBuilder(kClass).writeTo(sourceRootFile)
     }
 
-    override fun process(annotations: Set<TypeElement>, roundEnv: RoundEnvironment): Boolean {
-        val genSourceRoot = processingEnv.options[KAPT_KOTLIN_GENERATED_OPTION_NAME] ?: throw Error("NO LOCATION FOUND")
+    return false
+  }
 
-        val sourceRootFile = File(genSourceRoot)
-        sourceRootFile.mkdir()
+  fun createBuilder(kClass: KotlinClass): FileSpec {
+    val builderName = "${kClass.name}Builder"
+    val classBuilder = TypeSpec.classBuilder(builderName)
 
-        val annotatedElements = roundEnv.getElementsAnnotatedWith(Builder::class.java) ?: mutableSetOf()
-        annotatedElements.forEach { el ->
-            if (el.kind != ElementKind.CLASS) return false
-            val clazz = el as TypeElement
-            val pkg = processingEnv.elementUtils.getPackageOf(clazz).toString()
-            val constructor = clazz.getConstructors().firstOrNull() ?: throw Error("")
+    val builderFunction = FunSpec.builder("build").returns(kClass.className)
+    val paramSb = StringBuilder()
 
-            createBuilder(
-                el,
-                pkg,
-                clazz.getName(),
-                constructor.parameters
-            ).writeTo(sourceRootFile)
+    kClass.constructors.firstOrNull()?.parameters?.forEach { param ->
+      val builderFieldName = "_${param.name}"
 
-        }
-
-        return false
-    }
-
-    fun createBuilder(
-        classElement: TypeElement,
-        packageName: String,
-        className: String,
-        fields: List<VariableElement>
-    ): FileSpec {
-        val builderName = "${className}Builder"
-        val clazz = TypeSpec.classBuilder(builderName)
-        fields.forEach { field ->
-            val originalName = field.getName()
-            val builderFieldName = "_$originalName"
-            val defaultValue = field.getDefaultValue()
-
-            clazz.addProperty(
-                PropertySpec.builder(
-                    builderFieldName,
-                    field.asKotlinType().copy(nullable = true),
-                    KModifier.PRIVATE
-                )
-                    .mutable()
-                    .initializer(defaultValue)
-                    .build()
-            )
-
-            clazz.addFunction(
-                FunSpec.builder(field.getName())
-                    .addParameter(
-                        ParameterSpec.builder(
-                            originalName,
-                            field.asKotlinType().copy(field.isNullable())
-                        ).build()
-                    )
-                    .addStatement("return apply { $builderFieldName = $originalName }")
-                    .build()
-            )
-        }
-
-        val params = fields.joinToString(", ") {
-            "${it.getName()} = _${it.getName()}${if (it.isNullable()) "" else "!!"}"
-        }
-
-        clazz.addFunction(
-            FunSpec.builder("build")
-                .returns(classElement.asClassName())
-                .addStatement("return $className($params)")
-                .build()
+      classBuilder.addProperty(
+        PropertySpec.builder(
+          builderFieldName,
+          param.type.name.copy(nullable = true),
+          KModifier.PRIVATE
         )
-        val fileSpec = FileSpec.builder(packageName, builderName).addType(clazz.build())
+          .mutable()
+          .initializer(param.defaultValue)
+          .build()
+      )
 
-        val companion = classElement.getCompanion()
-        if (companion != null) {
-            // JvmStatic can't be applied to extension functions.
-            fileSpec.addFunction(
-                FunSpec.builder("builder")
-                    .receiver(companion.asType().asKotlinType())
-                    .addStatement("return $builderName()")
-                    .build()
-            )
-        }
+      classBuilder.addFunction(
+        FunSpec.builder(param.name).addParameter(
+          ParameterSpec.builder(
+            param.name,
+            param.type.name.copy(param.type.nullable)
+          ).build()
+        )
+          .addStatement("return apply { $builderFieldName = ${param.name} }")
+          .build()
+      )
 
-        return fileSpec.build()
+      paramSb.append("${param.name} = $builderFieldName${if (param.type.nullable) "" else "!!"}, ")
     }
+
+    builderFunction.addStatement("return ${kClass.name}(${paramSb.dropLast(2)})")
+    classBuilder.addFunction(builderFunction.build())
+
+    val fileSpec = FileSpec.builder(kClass.`package`, builderName).addType(classBuilder.build())
+
+    if (kClass.companion != null) {
+      fileSpec.addFunction(
+        FunSpec.builder("builder")
+          .receiver(kClass.companion.asType().asKotlinType())
+          .addStatement("return $builderName()")
+          .build()
+      )
+    }
+
+    return fileSpec.build()
+  }
 }
