@@ -30,6 +30,7 @@ object ElementVisitor {
     }
 
     return KotlinClass(
+      element,
       element.name,
       constructors,
       functions,
@@ -40,11 +41,13 @@ object ElementVisitor {
   }
 
   fun visit(element: ExecutableElement) = KotlinFunction(
+    element,
     element.name,
     element.parameters.mapTo(HashSet()) { visit(it) }
   )
 
   fun visit(element: VariableElement) = KotlinParameter(
+    element,
     element.name,
     KotlinType(element.asKotlinType(), element.getAnnotation(Nullable::class.java) != null),
     element.getDefaultValue()
