@@ -15,7 +15,7 @@ data class KotlinClass(
   val constructors: Set<KotlinFunction>,
   val functions: Set<KotlinFunction>,
   val `package`: String,
-  val className: ClassName,
+  val className: ClassName, // TODO: Make my own version of this, then I can remove KotlinPoet.
   val companion: TypeElement?
 ) :
   KotlinTypeElement()

@@ -3,7 +3,6 @@ package com.ch629.kotlin_builder
 import com.ch629.kotlin_builder.annotations.Builder
 import com.ch629.kotlin_builder.model.KotlinClass
 import com.ch629.kotlin_builder.model.processClass
-import com.squareup.kotlinpoet.*
 import java.io.File
 import javax.annotation.processing.*
 import javax.lang.model.SourceVersion
@@ -31,75 +30,47 @@ class BuilderProcessor : AbstractProcessor() {
     annotatedElements.forEach { el ->
       val kClass = processClass(el) ?: return@forEach
 
-      createBuilder(kClass).writeTo(sourceRootFile)
+      val genFile = File(sourceRootFile, "${kClass.`package`.replace('.', '\\')}\\${kClass.name}Builder.kt")
+      if (!genFile.parentFile.exists()) genFile.parentFile.mkdirs()
+      if (genFile.exists()) genFile.delete()
+      genFile.createNewFile()
+      genFile.writeText(createFileContents(kClass))
     }
 
     return false
   }
 
-  fun createBuilder(kClass: KotlinClass): FileSpec {
-    val builderName = "${kClass.name}Builder"
-    val classBuilder = TypeSpec.classBuilder(builderName)
-    val classFieldName = kClass.name.decapitalize()
-
-    val builderFunction = FunSpec.builder("build").returns(kClass.className)
-    val paramSb = StringBuilder()
-    val ofSb = StringBuilder()
+  private fun createFileContents(kClass: KotlinClass): String {
+    val decapName = kClass.name.decapitalize()
+    val variableListSb = StringBuilder()
+    val variableSetterSb = StringBuilder()
+    val buildParamSb = StringBuilder()
+    val ofFieldSb = StringBuilder()
 
     kClass.constructors.firstOrNull()?.parameters?.forEach { param ->
-      val builderFieldName = "_${param.name}"
-
-      classBuilder.addProperty(
-        PropertySpec.builder(
-          builderFieldName,
-          param.type.name.copy(nullable = true),
-          KModifier.PRIVATE
-        )
-          .mutable()
-          .initializer(param.defaultValue)
-          .build()
-      )
-
-      classBuilder.addFunction(
-        FunSpec.builder(param.name).addParameter(
-          ParameterSpec.builder(
-            param.name,
-            param.type.name.copy(param.type.nullable)
-          ).build()
-        )
-          .addStatement("return apply { $builderFieldName = ${param.name} }")
-          .build()
-      )
-
-      paramSb.append("${param.name} = $builderFieldName${if (param.type.nullable) "" else "!!"}, ")
-      ofSb.appendln("  $builderFieldName = $classFieldName.${param.name}")
+      variableListSb.appendln("  private var _${param.name}: ${param.type.name}? = ${param.defaultValue}")
+      variableSetterSb.appendln("  fun ${param.name}(${param.name}: ${param.type.name}) = apply { _${param.name} = ${param.name} }")
+      buildParamSb.append("${param.name} = _${param.name}${if (param.type.nullable) "" else "!!"}, ")
+      ofFieldSb.appendln("      _${param.name} = $decapName.${param.name}")
     }
 
-    builderFunction.addStatement("return ${kClass.name}(${paramSb.dropLast(2)})")
-    classBuilder.addFunction(builderFunction.build())
+    return """
+      |package ${kClass.`package`}
 
-    classBuilder.addType(
-      TypeSpec.companionObjectBuilder()
-        .addFunction(
-          FunSpec.builder("of")
-            .addAnnotation(JvmStatic::class)
-            .addParameter(classFieldName, kClass.className)
-            .addStatement("return $builderName().apply {\n$ofSb}")
-            .build()
-        ).build()
-    )
+      |${"// TODO: Imports"}
 
-    val fileSpec = FileSpec.builder(kClass.`package`, builderName).addType(classBuilder.build())
-
-    if (kClass.companion != null) {
-      fileSpec.addFunction(
-        FunSpec.builder("builder")
-          .receiver(kClass.companion.asType().asKotlinType())
-          .addStatement("return $builderName()")
-          .build()
-      )
-    }
-
-    return fileSpec.build()
+      |class ${kClass.name}Builder {
+      |$variableListSb
+      |$variableSetterSb
+      |  fun build(): ${kClass.name} = ${kClass.name}(${buildParamSb.dropLast(2)})
+  
+      |  companion object {
+      |    @JvmStatic
+      |    fun of($decapName: ${kClass.name}) = ${kClass.name}Builder().apply {
+      |${ofFieldSb.dropLast(1)}
+      |    }
+      |  }
+      |}${if (kClass.companion != null) "\n\nfun ${kClass.name}.Companion.builder() = ${kClass.name}Builder()" else ""}
+    """.trimMargin()
   }
 }
