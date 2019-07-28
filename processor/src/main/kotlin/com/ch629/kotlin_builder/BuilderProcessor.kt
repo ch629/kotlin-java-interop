@@ -40,9 +40,11 @@ class BuilderProcessor : AbstractProcessor() {
   fun createBuilder(kClass: KotlinClass): FileSpec {
     val builderName = "${kClass.name}Builder"
     val classBuilder = TypeSpec.classBuilder(builderName)
+    val classFieldName = kClass.name.decapitalize()
 
     val builderFunction = FunSpec.builder("build").returns(kClass.className)
     val paramSb = StringBuilder()
+    val ofSb = StringBuilder()
 
     kClass.constructors.firstOrNull()?.parameters?.forEach { param ->
       val builderFieldName = "_${param.name}"
@@ -70,10 +72,22 @@ class BuilderProcessor : AbstractProcessor() {
       )
 
       paramSb.append("${param.name} = $builderFieldName${if (param.type.nullable) "" else "!!"}, ")
+      ofSb.appendln("  $builderFieldName = $classFieldName.${param.name}")
     }
 
     builderFunction.addStatement("return ${kClass.name}(${paramSb.dropLast(2)})")
     classBuilder.addFunction(builderFunction.build())
+
+    classBuilder.addType(
+      TypeSpec.companionObjectBuilder()
+        .addFunction(
+          FunSpec.builder("of")
+            .addAnnotation(JvmStatic::class)
+            .addParameter(classFieldName, kClass.className)
+            .addStatement("return $builderName().apply {\n$ofSb}")
+            .build()
+        ).build()
+    )
 
     val fileSpec = FileSpec.builder(kClass.`package`, builderName).addType(classBuilder.build())
 
